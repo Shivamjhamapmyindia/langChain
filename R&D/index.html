@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>LangChain + Ollama Chat (Streaming)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:#f6f8fa; margin:0; padding:0; }
+    .app { max-width:800px; margin:32px auto; background:white; border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,0.06); overflow:hidden; }
+    header { padding:16px 20px; border-bottom:1px solid #eef2f6; }
+    .messages { height:560px; overflow:auto; padding:20px; display:flex; flex-direction:column; gap:12px; }
+    .msg { max-width:78%; padding:12px 14px; border-radius:10px; line-height:1.45; }
+    .user { align-self:flex-end; background:#0b93f6; color:white; }
+    .bot { align-self:flex-start; background:#f1f3f5; color:#111827; }
+    .tool { font-family: monospace; font-size:0.92em; background:#fff7e6; padding:8px; border-radius:8px; }
+    footer { display:flex; gap:8px; padding:12px; border-top:1px solid #eef2f6; }
+    input[type="text"] { flex:1; padding:10px 12px; border-radius:8px; border:1px solid #e6eef6; }
+    button { padding:10px 14px; border-radius:8px; border:0; background:#0b93f6; color:white; cursor:pointer; }
+    .status { font-size:0.9em; color:#6b7280; padding:0 12px 12px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <strong>LangChain + Ollama Chat (Streaming)</strong>
+      <div class="status" id="status">Disconnected</div>
+    </header>
+
+    <div class="messages" id="messages"></div>
+
+    <footer>
+      <input id="input" type="text" placeholder="Ask something (e.g. 'Weather in New York and 15 + 27')" />
+      <button id="send">Send</button>
+    </footer>
+  </div>
+
+<script>
+const messagesEl = document.getElementById('messages');
+const inputEl = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+const statusEl = document.getElementById('status');
+
+function addMessage(text, cls = 'bot'){
+  const div = document.createElement('div');
+  div.className = 'msg ' + cls;
+  div.innerHTML = text;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+async function startChat(text){
+  // 1) send the question and receive an ID
+  const res = await fetch('http://localhost:3000/chat', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ message: text })
+  });
+  const { id } = await res.json();
+
+  // 2) open SSE to receive streaming tokens
+  const es = new EventSource(`http://localhost:3000/events/${id}`);
+  statusEl.textContent = 'Streaming...';
+
+  // create a placeholder bot message and update it as tokens arrive
+  const botNode = addMessage('', 'bot');
+
+  es.onmessage = (ev) => {
+    // messages are JSON blobs with {type: 'token'|'tool'|'done', content}
+    try{
+      const data = JSON.parse(ev.data);
+      if(data.type === 'token'){
+        botNode.innerHTML += data.content;
+      } else if(data.type === 'tool'){
+        // show tool result as a separate small block
+        const toolNode = document.createElement('div');
+        toolNode.className = 'msg bot tool';
+        toolNode.innerText = data.content;
+        messagesEl.appendChild(toolNode);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      } else if(data.type === 'done'){
+        statusEl.textContent = 'Idle';
+        es.close();
+      }
+    }catch(e){
+      console.warn('Invalid SSE data', ev.data);
+    }
+  };
+
+  es.onerror = (err) => {
+    console.error('SSE error', err);
+    statusEl.textContent = 'Disconnected';
+    es.close();
+  }
+}
+
+sendBtn.addEventListener('click', async () => {
+  const text = inputEl.value.trim();
+  if(!text) return;
+  addMessage(text, 'user');
+  inputEl.value = '';
+  await startChat(text);
+});
+
+inputEl.addEventListener('keydown', (e) => { if(e.key === 'Enter') sendBtn.click(); });
+</script>
+</body>
+</html>
+
+

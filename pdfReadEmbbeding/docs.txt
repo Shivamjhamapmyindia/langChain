@@ -1,0 +1,5 @@
+ python3 -m venv chroma-env
+ source chroma-env/bin/activate
+ chroma-env\Scripts\activate
+  pip install chromadb
+ chroma run --path ./chroma-store
