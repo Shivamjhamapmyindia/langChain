@@ -137,27 +137,95 @@ function toggleChat() {
 }
 
 function handleKeyPress(event) {
-  if(event.key === 'Enter') {
-    const input = document.getElementById('chatbot-input');
-    const message = input.value.trim();
-    if(message === '') return;
-    addMessage(message, 'user');
-    input.value = '';
-
-    // Bot response simulation
-    setTimeout(() => {
-      addMessage('Hello! How can I help you today?', 'bot');
-    }, 500);
+  if (event.key === 'Enter') {
+    sendMessage();
   }
+}
+
+function sendMessage() {
+  const input = document.getElementById('chatbot-input');
+  const message = input.value.trim();
+  if (!message) return;
+
+  addMessage(message, 'user');
+  input.value = '';
+
+  // 👉 Send user message to your Express server (POST /chat)
+  fetch('http://localhost:3000/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message })
+  })
+  .then(res => res.json())
+  .then(data => {
+    // data.id = SSE stream ID
+    startSSEStream(data.id);
+  })
+  .catch(err => {
+    console.error('Chat Error:', err);
+    addMessage('Server error. Please try again.', 'bot');
+  });
+}
+
+function startSSEStream(id) {
+  const eventSource = new EventSource(`http://localhost:3000/events/${id}`);
+  let botBuffer = '';
+
+  eventSource.onmessage = (event) => {
+    const payload = JSON.parse(event.data);
+
+    if (payload.type === 'token') {
+      botBuffer += payload.content;
+      updateBotMessage(botBuffer);
+    }
+
+    if (payload.type === 'tool') {
+      // Optional: Show tool messages
+      // addMessage(`[tool]\n${payload.content}`, 'bot');
+    }
+
+    if (payload.type === 'done') {
+      eventSource.close();
+    }
+  };
+
+  eventSource.onerror = (err) => {
+    console.error('SSE Error:', err);
+    eventSource.close();
+  };
+}
+
+// Live updating bot bubble
+let liveBotMessageDiv = null;
+
+function updateBotMessage(text) {
+  const messages = document.getElementById('chatbot-messages');
+
+  if (!liveBotMessageDiv) {
+    liveBotMessageDiv = document.createElement('div');
+    liveBotMessageDiv.className = 'bot';
+    messages.appendChild(liveBotMessageDiv);
+  }
+
+  // Display only the actual content, not the [tool] label
+  liveBotMessageDiv.innerText = text.trim();
+  messages.scrollTop = messages.scrollHeight;
 }
 
 function addMessage(text, sender) {
   const messages = document.getElementById('chatbot-messages');
+
   const messageDiv = document.createElement('div');
   messageDiv.className = sender;
   messageDiv.innerText = text;
+
   messages.appendChild(messageDiv);
   messages.scrollTop = messages.scrollHeight;
+
+  // Reset bot streaming bubble on new user message
+  if (sender === 'user') {
+    liveBotMessageDiv = null;
+  }
 }
 </script>
 

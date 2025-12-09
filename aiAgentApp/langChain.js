@@ -1,12 +1,21 @@
+import { ChatOllama,OllamaEmbeddings } from "@langchain/ollama";
 import { Chroma } from "@langchain/community/vectorstores/chroma";
-import { OllamaEmbeddings, ChatOllama } from "@langchain/ollama";
+import { weatherTool, addTool } from "./tools.js"; // Correct import here
 
-async function askQuestion(question) {
-  console.log("🔍 Loading vector DB...");
+// Create LLM
+const llm = new ChatOllama({
+  model: "qwen3:0.6b",
+  streaming: true,
+  think: false,
+});
+
+const llmWithTools = llm.bindTools([weatherTool, addTool]);
+
+const queryOnPdf = async (question) => {
   const vectorStore = await Chroma.fromExistingCollection(
     new OllamaEmbeddings({ model: "mxbai-embed-large:latest" }),
     {
-      collectionName: "pdf_rag",
+      collectionName: "abc_travel_agency_brochure",
       path: "./chroma_store",
     }
   );
@@ -31,7 +40,7 @@ QUESTION: ${question}
 
   console.log("\n🟩 Final Answer:");
   console.log(answer);
-}
+};
+// queryOnPdf("What services does ABC Travel Agency offer?");
 
-// askQuestion("What does the PDF say about the main topic?");
-askQuestion("How to contact agency?");
+export { llmWithTools };
